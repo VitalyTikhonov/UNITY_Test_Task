@@ -78,15 +78,36 @@ async function modifyOrganizations() {
         latitude: { $arrayElemAt: ['$location.ll', 1] },
         students: 1,
         seconds: 1,
-      })
-    .out({ db: "unity", coll : "organizations" });
-    // .out("organizations");
-    // .lookup({
-    //   from: 'countries',
-    //   let: { order_item: '$item', order_qty: '$ordered' },
-    //   pipeline: [{ $match: { $expr: { $and: [{ $eq: ['$stock_item', '$$order_item'] }, { $gte: ['$instock', '$$order_qty'] }] } } }, { $project: { stock_item: 0, _id: 0 } }],
-    //   as: 'stockdata',
-    // });
+        currentStudentCount: {
+          $reduce: {
+            input: '$students',
+            initialValue: { sum: 0 },
+            in: {
+              sum: { $add: ['$$value.sum', '$$this.number'] },
+            },
+          },
+        },
+      // }) // УКАЗАТЬ ПРАВИЛЬНОЕ ЗАКРЫТИЕ
+      // .lookup({
+      //   from: 'countries',
+      //   // let: { order_item: '$item', order_qty: '$ordered' },
+      //   // pipeline: [{ $match: { $expr: { $and: [{ $eq: ['$stock_item', '$$order_item'] }, { $gte: ['$instock', '$$order_qty'] }] } } }, { $project: { stock_item: 0, _id: 0 } }],
+      //   pipeline: [
+      //     {
+      //       $reduce: {
+      //         input: 'students',
+      //         initialValue: { sum: 0 },
+      //         in: {
+      //           sum: { $add: ['$$value.sum', '$$this'] },
+      //         },
+      //       },
+      //     },
+      //   ],
+      //   as: 'stockdata',
+      // })
+      }); // УКАЗАТЬ ПРАВИЛЬНОЕ ЗАКРЫТИЕ
+      // .out({ db: 'unity', coll: 'organizations' });
+    // .out("organizations"); // возможно?
     console.log('docs', docs);
   } catch (err) {
     console.log('err', err);
