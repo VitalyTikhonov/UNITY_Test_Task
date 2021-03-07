@@ -14,20 +14,26 @@ mongoose.connect(DATABASE_ADDRESS, {
   useUnifiedTopology: true,
 });
 
-// Country.bulkWrite(
-//   countries.map((countryEntry) => {
-//     // const { country } = countryEntry;
+/* Первичная запись из JSON в базу */
+async function writeCountries() {
+  try {
+    const writeResult = await Country.bulkWrite(
+      countries.map((countryEntry) => {
 
-//     return {
-//       insertOne: {
-//         document: { ...countryEntry },
-//       },
-//     };
-//   }),
-// )
-//   .then((success) => console.log('Country success.insertedCount', success.insertedCount))
-//   .catch((err) => console.log('err', err));
+        return {
+          insertOne: {
+            document: countryEntry,
+          },
+        };
+      }),
+    );
+    console.log('Country writeResult.insertedCount', writeResult.insertedCount);
+  } catch (err) {
+    console.log('err', err);
+  }
+}
 
+/* Первичная запись из JSON в базу */
 async function writeOrganizations() {
   try {
     const writeResult = await Organization.bulkWrite(
@@ -45,77 +51,90 @@ async function writeOrganizations() {
   }
 }
 
+/* Обработка */
 async function modifyOrganizations() {
   try {
-    // const filter = { city: 'West Harmony' };
-    // let docs = await Organization.aggregate([{ $match: filter }]);
-
-    // console.log('docs.length', docs.length); // 1
-    // console.log('docs[0].name', docs[0].name); // 'Jean-Luc Picard'
-
-    // let docs = await Organization.aggregate([
-    //   {
-    //     $group: {
-    //       // Each `_id` must be unique, so if there are multiple
-    //       // documents with the same age, MongoDB will increment `count`.
-    //       _id: '$students',
-    //       count: { $students: 1 }
-    //     }
-    //   }
-    // ]);
-
-    // console.log('docs.length', docs.length);
-    // console.log('docs', docs);
-
     let docs = await Organization.aggregate()
-      // .lookup({ from: 'countries', localField: 'country', foreignField: 'country', as: 'countryMatched' })
-      .project({
-        country: 1,
-        city: 1,
-        name: 1,
-        location: 1,
-        longitude: { $arrayElemAt: ['$location.ll', 0] },
-        latitude: { $arrayElemAt: ['$location.ll', 1] },
-        students: 1,
-        seconds: 1,
-        currentStudentCount: {
-          $reduce: {
-            input: '$students',
-            initialValue: { sum: 0 },
-            in: {
-              sum: { $add: ['$$value.sum', '$$this.number'] },
+    /* вариант lookup с pipeline */
+    .lookup({
+        /* смотрит в другую коллекцию */
+        from: 'countries',
+        /* объявляет переменную country, записывая в нее значение из документа текущей коллекции Organization ('$country') */
+        let: {
+          country: '$country',
+        },
+        pipeline: [
+          /* выбирает документы из коллекции countries, в которых поле country ('$country') соответствуют переменной '$$country' */
+          {
+            $match: {
+              /* чтобы в match обращаться к переменным из let, нужно обернуть в $expr: (если, кроме match, тут еще правила,
+                в них $expr не нужно) */
+              $expr: {
+                $eq: ['$$country', '$country'],
+              },
             },
           },
+          /* из отобранного документа из countries выкидываем ненужные поля */
+          {
+            $project: {
+              _id: false,
+              overallStudents: true,
+            },
+          },
+        ],
+        as: 'overallStudents',
+      }) // УКАЗАТЬ ПРАВИЛЬНОЕ ЗАКРЫТИЕ
+      /* в документе Organization оказывается свойство overallStudents: [ { overallStudents: 1000 } ], т. к. lookup пишет
+      в массив и только в него */
+
+      /* Распаковываем
+      overallStudents: [ { overallStudents: 1000 } ]
+      в
+      overallStudents: { overallStudents: 1000 }
+      (оно почему-то доступно для дальнейшей обработки, но не остается в документе, хотя в последующем project я его не удаляю)*/
+      .unwind('$overallStudents')
+      .project({
+        /* указываем, какие поля перенести из оригинального (1/true) или удалить (0/false) */
+        country: true,
+        city: true,
+        name: true,
+        location: true,
+        students: true,
+        seconds: true,
+        /* создаем новые поля */
+        longitude: { $arrayElemAt: ['$location.ll', 0] },
+        latitude: { $arrayElemAt: ['$location.ll', 1] },
+        studentCountDifference: {
+          /* вычитаем... */
+          $subtract: [
+            /* ...из overallStudents – как в ТЗ – что странно, так как это число во многих случаях оказывается меньше второго
+            и результат – отрицательное,.. */
+            '$overallStudents.overallStudents',
+            /* ...сумму "current students count": */
+            {
+              /* проходимся по массиву students, суммируя поля number */
+              $reduce: {
+                input: '$students',
+                initialValue: 0,
+                in: { $add: ['$$value', '$$this.number'] },
+              },
+            },
+          ],
         },
-      // }) // УКАЗАТЬ ПРАВИЛЬНОЕ ЗАКРЫТИЕ
-      // .lookup({
-      //   from: 'countries',
-      //   // let: { order_item: '$item', order_qty: '$ordered' },
-      //   // pipeline: [{ $match: { $expr: { $and: [{ $eq: ['$stock_item', '$$order_item'] }, { $gte: ['$instock', '$$order_qty'] }] } } }, { $project: { stock_item: 0, _id: 0 } }],
-      //   pipeline: [
-      //     {
-      //       $reduce: {
-      //         input: 'students',
-      //         initialValue: { sum: 0 },
-      //         in: {
-      //           sum: { $add: ['$$value.sum', '$$this'] },
-      //         },
-      //       },
-      //     },
-      //   ],
-      //   as: 'stockdata',
-      // })
-      }); // УКАЗАТЬ ПРАВИЛЬНОЕ ЗАКРЫТИЕ
-      // .out({ db: 'unity', coll: 'organizations' });
+      }) // УКАЗАТЬ ПРАВИЛЬНОЕ ЗАКРЫТИЕ
+      // }); // УКАЗАТЬ ПРАВИЛЬНОЕ ЗАКРЫТИЕ
+      /* Сохраняем результат в БД с помощью out: */
+      .out({ db: 'unity', coll: 'organizations' });
     // .out("organizations"); // возможно?
-    console.log('docs', docs);
+    // console.log('docs', docs[2]);
   } catch (err) {
     console.log('err', err);
   }
 }
 
 async function executeMyProgram() {
-  await writeOrganizations();
+  // await writeCountries();
+  // await writeOrganizations();
   modifyOrganizations();
 }
 
