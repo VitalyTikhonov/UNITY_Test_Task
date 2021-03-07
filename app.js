@@ -2,7 +2,7 @@ const express = require('express');
 const mongoose = require('mongoose');
 const Organization = require('./models/organization');
 const Country = require('./models/country');
-const organizatons = require('./data/first.json');
+const organizations = require('./data/first.json');
 const countries = require('./data/second.json');
 
 const { PORT, DATABASE_ADDRESS } = require('./configs/config');
@@ -13,22 +13,6 @@ mongoose.connect(DATABASE_ADDRESS, {
   useFindAndModify: false,
   useUnifiedTopology: true,
 });
-
-// const db = mongoose.connection;
-// db.on('error', console.error.bind(console, 'connection error:'));
-// db.once('open', function() {
-//   // we're connected!
-//   console.log('Hooray!');
-// });
-
-// console.log('organizatons', organizatons);
-
-// Organization.insertMany(organizatons);
-// Country.insertMany(countries);
-
-/* For each document from the first collection, find document from the second collection by country respectively and count
-difference between overall students count and current students count (in the current document from first collection) and write
-result to the current document as separated field */
 
 // Country.bulkWrite(
 //   countries.map((countryEntry) => {
@@ -44,54 +28,77 @@ result to the current document as separated field */
 //   .then((success) => console.log('Country success.insertedCount', success.insertedCount))
 //   .catch((err) => console.log('err', err));
 
-//////////////////////////////////////////////////////////
-const getSize = readStream => {
-  return new Promise(function (resolve, reject) {
-  gm(readStream).size({ bufferStream: true }, function (err, size) {
-    if (err) reject(err);
-    else resolve(size);
-  })
-});
+async function writeOrganizations() {
+  try {
+    const writeResult = await Organization.bulkWrite(
+      organizations.map((organizaton) => {
+        return {
+          insertOne: {
+            document: organizaton,
+          },
+        };
+      }),
+    );
+    console.log('Organization writeResult.insertedCount', writeResult.insertedCount);
+  } catch (err) {
+    console.log('err', err);
+  }
 }
 
+async function modifyOrganizations() {
+  try {
+    // const filter = { city: 'West Harmony' };
+    // let docs = await Organization.aggregate([{ $match: filter }]);
 
-// let printSize = async readStream => {
-// console.log(`Size is ${await getSize(readStream)}`);
-// }
+    // console.log('docs.length', docs.length); // 1
+    // console.log('docs[0].name', docs[0].name); // 'Jean-Luc Picard'
 
-//////////////////////////////////////////////////////////
+    // let docs = await Organization.aggregate([
+    //   {
+    //     $group: {
+    //       // Each `_id` must be unique, so if there are multiple
+    //       // documents with the same age, MongoDB will increment `count`.
+    //       _id: '$students',
+    //       count: { $students: 1 }
+    //     }
+    //   }
+    // ]);
 
-function processCountries() {
-  return organizatons.map((organizaton) => {
-    const {
-      location: { ll },
-      ...rest
-    } = organizaton;
+    // console.log('docs.length', docs.length);
+    // console.log('docs', docs);
 
-    // const country = await Country.findOne({ country: organizaton.country }, 'overallStudents').exec();
-    // const overallStudentCount = country.overallStudents;
-    // console.log('overallStudentCount', overallStudentCount)
-
-    const currentStudentCount = organizaton.students.reduce((acc, item) => acc + item.number, 0);
-    // let studentCountDifference = overallStudentCount - currentStudentCount;
-    return {
-      insertOne: {
-        document: {
-          ...rest,
-          longitude: ll[0],
-          latitude: ll[1],
-          // studentCountDifference,
-        },
-      },
-    };
-  });
+    let docs = await Organization.aggregate()
+      // .lookup({ from: 'countries', localField: 'country', foreignField: 'country', as: 'countryMatched' })
+      .project({
+        country: 1,
+        city: 1,
+        name: 1,
+        location: 1,
+        longitude: { $arrayElemAt: ['$location.ll', 0] },
+        latitude: { $arrayElemAt: ['$location.ll', 1] },
+        students: 1,
+        seconds: 1,
+      })
+    .out({ db: "unity", coll : "organizations" });
+    // .out("organizations");
+    // .lookup({
+    //   from: 'countries',
+    //   let: { order_item: '$item', order_qty: '$ordered' },
+    //   pipeline: [{ $match: { $expr: { $and: [{ $eq: ['$stock_item', '$$order_item'] }, { $gte: ['$instock', '$$order_qty'] }] } } }, { $project: { stock_item: 0, _id: 0 } }],
+    //   as: 'stockdata',
+    // });
+    console.log('docs', docs);
+  } catch (err) {
+    console.log('err', err);
+  }
 }
 
-console.log('processCountries', processCountries());
+async function executeMyProgram() {
+  await writeOrganizations();
+  modifyOrganizations();
+}
 
-// Organization.bulkWrite(processCountries())
-//   .then((success) => console.log('Organization success.insertedCount', success.insertedCount))
-//   .catch((err) => console.log('err', err));
+executeMyProgram();
 
 const app = express();
 
