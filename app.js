@@ -19,7 +19,6 @@ async function writeCountries() {
   try {
     const writeResult = await Country.bulkWrite(
       countries.map((countryEntry) => {
-
         return {
           insertOne: {
             document: countryEntry,
@@ -55,26 +54,19 @@ async function writeOrganizations() {
 async function modifyOrganizations() {
   try {
     let docs = await Organization.aggregate()
-    /* вариант lookup с pipeline */
-    .lookup({
-        /* смотрит в другую коллекцию */
+      .lookup({
         from: 'countries',
-        /* объявляет переменную country, записывая в нее значение из документа текущей коллекции Organization ('$country') */
         let: {
-          country: '$country',
+          country: '$country', // из текущей
         },
         pipeline: [
-          /* выбирает документы из коллекции countries, в которых поле country ('$country') соответствуют переменной '$$country' */
           {
             $match: {
-              /* чтобы в match обращаться к переменным из let, нужно обернуть в $expr: (если, кроме match, тут еще правила,
-                в них $expr не нужно) */
               $expr: {
-                $eq: ['$$country', '$country'],
+                $eq: ['$$country', '$country'], // $$ - на переменную из let, то есть из текущей; $ - на вторую
               },
             },
           },
-          /* из отобранного документа из countries выкидываем ненужные поля */
           {
             $project: {
               _id: false,
@@ -84,35 +76,20 @@ async function modifyOrganizations() {
         ],
         as: 'overallStudents',
       }) // УКАЗАТЬ ПРАВИЛЬНОЕ ЗАКРЫТИЕ
-      /* в документе Organization оказывается свойство overallStudents: [ { overallStudents: 1000 } ], т. к. lookup пишет
-      в массив и только в него */
-
-      /* Распаковываем
-      overallStudents: [ { overallStudents: 1000 } ]
-      в
-      overallStudents: { overallStudents: 1000 }
-      (оно почему-то доступно для дальнейшей обработки, но не остается в документе, хотя в последующем project я его не удаляю)*/
       .unwind('$overallStudents')
       .project({
-        /* указываем, какие поля перенести из оригинального (1/true) или удалить (0/false) */
         country: true,
         city: true,
         name: true,
         location: true,
         students: true,
         seconds: true,
-        /* создаем новые поля */
         longitude: { $arrayElemAt: ['$location.ll', 0] },
         latitude: { $arrayElemAt: ['$location.ll', 1] },
         studentCountDifference: {
-          /* вычитаем... */
           $subtract: [
-            /* ...из overallStudents – как в ТЗ – что странно, так как это число во многих случаях оказывается меньше второго
-            и результат – отрицательное,.. */
             '$overallStudents.overallStudents',
-            /* ...сумму "current students count": */
             {
-              /* проходимся по массиву students, суммируя поля number */
               $reduce: {
                 input: '$students',
                 initialValue: 0,
@@ -122,11 +99,19 @@ async function modifyOrganizations() {
           ],
         },
       }) // УКАЗАТЬ ПРАВИЛЬНОЕ ЗАКРЫТИЕ
+      .group({
+        _id: { country: '$country' },
+        allDiffs: { $push: '$studentCountDifference' },
+        count: { $sum: 1 },
+        longitude: { $push: '$longitude' },
+        latitude: { $push: '$latitude' },
+      })
+
+      .out({ db: 'unity', coll: 'result' });
+      // .out("organizations"); // возможно?
       // }); // УКАЗАТЬ ПРАВИЛЬНОЕ ЗАКРЫТИЕ
-      /* Сохраняем результат в БД с помощью out: */
-      .out({ db: 'unity', coll: 'organizations' });
-    // .out("organizations"); // возможно?
-    // console.log('docs', docs[2]);
+    // console.log('docs', docs);
+    // console.log('docs2', docs[2]);
   } catch (err) {
     console.log('err', err);
   }
