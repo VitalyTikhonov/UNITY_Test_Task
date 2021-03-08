@@ -4,7 +4,7 @@ const Country = require('./models/country');
 const organizations = require('./data/first.json');
 const countries = require('./data/second.json');
 
-const { PORT, DATABASE_ADDRESS } = require('./configs/config');
+const { DATABASE_ADDRESS } = require('./configs/config');
 
 mongoose.connect(DATABASE_ADDRESS, {
   useNewUrlParser: true,

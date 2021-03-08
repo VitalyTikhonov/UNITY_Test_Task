@@ -10,7 +10,6 @@
   "author": "Vitaliy Tikhonov",
   "license": "ISC",
   "dependencies": {
-    "express": "^4.17.1",
     "mongoose": "^5.11.18"
   },
   "devDependencies": {
