@@ -1,4 +1,3 @@
-const express = require('express');
 const mongoose = require('mongoose');
 const Organization = require('./models/organization');
 const Country = require('./models/country');
@@ -51,19 +50,19 @@ async function writeOrganizations() {
 }
 
 /* Обработка */
-async function modifyOrganizations() {
+async function processData() {
   try {
     let docs = await Organization.aggregate()
       .lookup({
         from: 'countries',
         let: {
-          country: '$country', // из текущей
+          country: '$country', // из текущей коллекции
         },
         pipeline: [
           {
             $match: {
               $expr: {
-                $eq: ['$$country', '$country'], // $$ - на переменную из let, то есть из текущей; $ - на вторую
+                $eq: ['$$country', '$country'], // $$ - на переменную из let, то есть из текущей коллекции; $ - на вторую коллекцию
               },
             },
           },
@@ -75,15 +74,9 @@ async function modifyOrganizations() {
           },
         ],
         as: 'overallStudents',
-      }) // УКАЗАТЬ ПРАВИЛЬНОЕ ЗАКРЫТИЕ
+      })
       .unwind('$overallStudents')
-      .project({
-        country: true,
-        city: true,
-        name: true,
-        location: true,
-        students: true,
-        seconds: true,
+      .addFields({
         longitude: { $arrayElemAt: ['$location.ll', 0] },
         latitude: { $arrayElemAt: ['$location.ll', 1] },
         studentCountDifference: {
@@ -98,7 +91,7 @@ async function modifyOrganizations() {
             },
           ],
         },
-      }) // УКАЗАТЬ ПРАВИЛЬНОЕ ЗАКРЫТИЕ
+      })
       .group({
         _id: { country: '$country' },
         allDiffs: { $push: '$studentCountDifference' },
@@ -108,26 +101,15 @@ async function modifyOrganizations() {
       })
 
       .out({ db: 'unity', coll: 'result' });
-      // .out("organizations"); // возможно?
-      // }); // УКАЗАТЬ ПРАВИЛЬНОЕ ЗАКРЫТИЕ
-    // console.log('docs', docs);
-    // console.log('docs2', docs[2]);
   } catch (err) {
     console.log('err', err);
   }
 }
 
 async function executeMyProgram() {
-  // await writeCountries();
-  // await writeOrganizations();
-  modifyOrganizations();
+  await writeCountries();
+  await writeOrganizations();
+  processData();
 }
 
 executeMyProgram();
-
-const app = express();
-
-app.use(express.json());
-app.listen(PORT, () => {
-  console.log(`Сервер запущен, порт: ${PORT}`);
-});
